@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # Serviço do Banco de Dados Oracle
+  db:
+    build:
+      context: ./database/oracle # Onde o Dockerfile do Oracle BD está localizado
+      dockerfile: Dockerfile
+    container_name: resgate-alerta-oracle-db
+    environment:
+      # Variáveis de ambiente para inicialização do Oracle XE.
+      # Mude 'your_secure_oracle_password' para uma senha forte e SEGURA!
+      ORACLE_PWD: 922Pedrogas@123 # <-- MUDE ESTA SENHA!
+      ORACLE_USER: dephenriquejp@gmail.com # Usuário que você usará para conectar. 'system' é padrão.
+      ORACLE_SID: XE # System ID para Oracle Express Edition
+      # ORACLE_PDB: XEPDB1 # Opcional para PDB se você precisar.
+    ports:
+      - "1521:1521" # Porta externa:Porta interna (porta padrão do listener Oracle)
+      # - "5500:5500" # Opcional: Porta para o Enterprise Manager Express (UI web)
+    volumes:
+      # Volume nomeado para persistência dos dados do banco
+      # O caminho no container é onde o Oracle XE armazena seus dados
+      - oracle_db_data:/opt/oracle/oradata
+    # Healthcheck para Oracle pode ser demorado na primeira inicialização (criação do DB).
+    # Este healthcheck simples verifica se a porta está aberta.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "nc -z localhost 1521"]
+      interval: 10s
+      timeout: 5s
+      retries: 20 # Aumentar o número de retries devido ao tempo de inicialização do Oracle
+      start_period: 60s # Dê um tempo para o DB iniciar sem falhar o healthcheck
+    restart: unless-stopped
+    networks:
+      - resgate-alerta-network
+
+  # Serviço da Aplicação (API)
+  app:
+    build:
+      context: . # Onde o Dockerfile da API está localizado (raiz do projeto)
+      dockerfile: Dockerfile
+    container_name: resgate-alerta-api
+    ports:
+      - "8080:8080" # Porta externa:Porta interna
+    environment:
+      # ATIVA O PERFIL 'docker' para que a API use o application-docker.properties
+      SPRING_PROFILES_ACTIVE: docker
+      # Se não usasse perfil, as variáveis seriam definidas aqui:
+      # SPRING_DATASOURCE_URL: jdbc:oracle:thin:@db:1521:XE
+      # SPRING_DATASOURCE_USERNAME: system
+      # SPRING_DATASOURCE_PASSWORD: your_secure_oracle_password
+    depends_on:
+      db:
+        condition: service_healthy # Garante que o banco de dados esteja saudável antes de iniciar a API
+    restart: unless-stopped
+    networks:
+      - resgate-alerta-network
+
+# Redes
+networks:
+  resgate-alerta-network:
+    driver: bridge
+
+# Volumes para persistência de dados do banco
+volumes:
+  oracle_db_data:
